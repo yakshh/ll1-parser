@@ -1,0 +1,3 @@
+# Requirements for Mini-SQL LL(1) Compiler & Optimizer
+streamlit>=1.30.0
+pandas>=2.0.0
