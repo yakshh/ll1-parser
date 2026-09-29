@@ -355,7 +355,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (PRESETS[val]) {
                 document.getElementById('sqlQuery').value = PRESETS[val];
                 setMode('compiler');
-                compileAndRun();
+                const alertBox = document.getElementById('statusAlert');
+                alertBox.innerHTML = "<div class='alert' style='background:#f1f5f9; color:#475569;'>Query loaded into editor. Click <strong>Compile & Execute</strong> to process.</div>";
             }
         }
 
@@ -529,8 +530,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
         }
 
-        // Run automatically when page finishes loading
-        window.addEventListener('DOMContentLoaded', compileAndRun);
+        // Ready on page load (manual execution only)
+        window.addEventListener('DOMContentLoaded', () => {
+            const alertBox = document.getElementById('statusAlert');
+            alertBox.innerHTML = "<div class='alert' style='background:#f1f5f9; color:#475569;'>Ready. Select a pre-built query or type your own, then click <strong>Compile & Execute</strong>.</div>";
+        });
     </script>
 </body>
 </html>"""
