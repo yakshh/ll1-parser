@@ -12,7 +12,7 @@ SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 def init_db(db_path: str = DB_PATH) -> None:
     """Initializes the SQLite database with the default schema and seed data."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         schema_sql = f.read()
     conn.executescript(schema_sql)
@@ -23,7 +23,7 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     """Returns an active SQLite connection, initializing if not present."""
     if not os.path.exists(db_path):
         init_db(db_path)
-    return sqlite3.connect(db_path)
+    return sqlite3.connect(db_path, timeout=30.0)
 
 def get_table_schema(db_path: str = DB_PATH) -> Dict[str, Dict[str, str]]:
     """

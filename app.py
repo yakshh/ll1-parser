@@ -15,24 +15,24 @@ from flask import Flask, request, jsonify, render_template_string
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from main import MiniSQLCompiler
-from database.database import init_db, get_table_schema, execute_query
+from database.database import init_db, get_table_schema, execute_query, DB_PATH
 from educational.theory_ll1 import run_educational_demo
 
-# Initialize database
-init_db()
+# Initialize database only if missing to prevent SQLite file locks
+if not os.path.exists(DB_PATH):
+    init_db()
 
 # Initialize compiler
 compiler = MiniSQLCompiler()
 
 app = Flask(__name__)
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
+HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LL(1) Parser & SQL Query Compiler</title>
+    <title>LL(1) Parser & Mini-SQL Compiler</title>
     <style>
         :root {
             --primary: #2563eb;
@@ -57,29 +57,30 @@ HTML_TEMPLATE = """
         }
         .container { max-width: 1200px; margin: 0 auto; }
         header {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             padding-bottom: 16px;
             border-bottom: 1px solid var(--border);
         }
         h1 { font-size: 26px; font-weight: 700; color: #0f172a; }
         .subtitle { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
         
-        /* Badges & Actions */
+        /* Header Mode Buttons */
         .header-actions { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
         .btn-pill {
             background: #e2e8f0;
             border: none;
-            padding: 6px 14px;
+            padding: 7px 16px;
             border-radius: 20px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
+            color: #334155;
         }
         .btn-pill:hover { background: #cbd5e1; }
         .btn-pill.active { background: var(--primary); color: #fff; }
-        
-        /* Input Box */
+
+        /* Card Container */
         .card {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -88,6 +89,32 @@ HTML_TEMPLATE = """
             margin-bottom: 20px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
+        
+        /* Sample Query Bar */
+        .preset-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .preset-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+        }
+        .preset-select {
+            padding: 7px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            background: #fff;
+            color: #1e293b;
+            min-width: 320px;
+            outline: none;
+        }
+        .preset-select:focus { border-color: var(--primary); }
+
         label { font-size: 13px; font-weight: 600; color: #475569; display: block; margin-bottom: 6px; }
         textarea {
             width: 100%;
@@ -99,26 +126,20 @@ HTML_TEMPLATE = """
             border-radius: 6px;
             outline: none;
             resize: vertical;
+            background: #ffffff;
         }
         textarea:focus { border-color: var(--primary); }
-        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
-        .preset-select {
-            padding: 8px 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 13px;
-            background: #fff;
-            max-width: 60%;
-        }
+        .controls { display: flex; justify-content: flex-end; align-items: center; margin-top: 12px; }
         .btn-primary {
             background: var(--primary);
             color: #fff;
             border: none;
-            padding: 9px 20px;
+            padding: 9px 24px;
             border-radius: 6px;
             font-weight: 600;
             font-size: 14px;
             cursor: pointer;
+            transition: background 0.2s;
         }
         .btn-primary:hover { background: var(--primary-hover); }
         
@@ -139,7 +160,7 @@ HTML_TEMPLATE = """
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         
-        /* Results & Pre */
+        /* Monospace / Code Blocks */
         pre {
             background: #f1f5f9;
             padding: 14px;
@@ -148,6 +169,7 @@ HTML_TEMPLATE = """
             font-size: 13px;
             overflow-x: auto;
             border: 1px solid #e2e8f0;
+            white-space: pre-wrap;
         }
         table {
             width: 100%;
@@ -163,7 +185,7 @@ HTML_TEMPLATE = """
         th { background: #f8fafc; font-weight: 600; }
         tr:nth-child(even) { background: #fcfcfd; }
         
-        /* Alerts */
+        /* Alerts & Badges */
         .alert {
             padding: 12px 16px;
             border-radius: 6px;
@@ -189,30 +211,35 @@ HTML_TEMPLATE = """
     <div class="container">
         <header>
             <h1>Table-Driven LL(1) Parser & Mini-SQL Compiler</h1>
-            <div class="subtitle">Compiler Design Project — Part A: LL(1) Predictive Parser | Part B: SQL Compiler Pipeline</div>
+            <div class="subtitle">Compiler Design Project — LL(1) Predictive Parser | SQL Compiler Pipeline</div>
             <div class="header-actions">
-                <button class="btn-pill active" onclick="loadMode('compiler')">Standard Compiler Mode</button>
-                <button class="btn-pill" onclick="loadVivaDemo()">🎓 Viva Demo: SELECT name FROM employees;</button>
-                <button class="btn-pill" onclick="loadTheoryDemo()">📐 Educational Theory: E → T E'</button>
-                <button class="btn-pill" onclick="loadGrammarView()">📖 View LL(1) Table (0 Conflicts)</button>
+                <button id="btnModeCompiler" class="btn-pill active" onclick="setMode('compiler')">Standard Compiler</button>
+                <button id="btnModeTheory" class="btn-pill" onclick="loadTheoryDemo()">Educational Theory: E &rarr; T E&#39;</button>
+                <button id="btnModeGrammar" class="btn-pill" onclick="loadGrammarView()">Mini-SQL LL(1) Table (0 Conflicts)</button>
             </div>
         </header>
 
         <div class="card" id="inputCard">
-            <label for="sqlQuery">Enter Mini-SQL Query:</label>
-            <textarea id="sqlQuery">SELECT name, salary FROM employees WHERE salary > 50000 ORDER BY salary DESC;</textarea>
-            <div class="controls">
+            <div class="preset-bar">
+                <span class="preset-label">Pre-built Sample Queries:</span>
                 <select id="presetSelect" class="preset-select" onchange="applyPreset()">
-                    <option value="custom">-- Choose a Preset Query --</option>
-                    <option value="1">Valid: Filter & Descending Sort</option>
-                    <option value="2">Valid: Full Projection (SELECT *)</option>
-                    <option value="3">Valid: Compound Filter (AND)</option>
-                    <option value="4">Syntax Error: Missing Projection (SELECT FROM ...)</option>
-                    <option value="5">Syntax Error: Missing FROM keyword</option>
-                    <option value="6">Semantic Error: Unknown Column (SELECT xyz)</option>
-                    <option value="7">Semantic Error: Unknown Table (FROM students)</option>
-                    <option value="8">Optimizer: Redundant Column & Filter</option>
+                    <option value="custom">-- Select a Pre-built Query --</option>
+                    <option value="1">1. Filter & Descending Sort (Valid)</option>
+                    <option value="2">2. Full Table Projection (SELECT *) (Valid)</option>
+                    <option value="3">3. Compound Filter with AND (Valid)</option>
+                    <option value="4">4. Simple Single Column Selection (Valid)</option>
+                    <option value="5">5. Syntax Error: Missing Projection (SELECT FROM ...)</option>
+                    <option value="6">6. Syntax Error: Missing FROM keyword</option>
+                    <option value="7">7. Semantic Error: Unknown Column (SELECT xyz)</option>
+                    <option value="8">8. Semantic Error: Unknown Table (FROM students)</option>
+                    <option value="9">9. Optimizer Demo: Duplicate Column & Redundant Predicate</option>
                 </select>
+            </div>
+
+            <label for="sqlQuery">Mini-SQL Query Input:</label>
+            <textarea id="sqlQuery">SELECT name, salary FROM employees WHERE salary > 50000 ORDER BY salary DESC;</textarea>
+            
+            <div class="controls">
                 <button class="btn-primary" onclick="compileAndRun()">Compile & Execute</button>
             </div>
         </div>
@@ -232,7 +259,7 @@ HTML_TEMPLATE = """
 
             <!-- Tab 1: Query Results -->
             <div id="tabResult" class="tab-content active">
-                <div id="resultOutput">Click <strong>Compile & Execute</strong> to process the query.</div>
+                <div id="resultOutput">Processing initial query...</div>
             </div>
 
             <!-- Tab 2: LL(1) Stack Trace -->
@@ -298,17 +325,36 @@ HTML_TEMPLATE = """
             "1": "SELECT name, salary FROM employees WHERE salary > 50000 ORDER BY salary DESC;",
             "2": "SELECT * FROM employees;",
             "3": "SELECT name, age, salary FROM employees WHERE age >= 25 AND salary <= 70000 ORDER BY age ASC;",
-            "4": "SELECT FROM employees;",
-            "5": "SELECT name employees;",
-            "6": "SELECT xyz FROM employees;",
-            "7": "SELECT name FROM students;",
-            "8": "SELECT name, salary, name FROM employees WHERE salary > 50000 AND salary > 50000;"
+            "4": "SELECT name FROM employees;",
+            "5": "SELECT FROM employees;",
+            "6": "SELECT name employees;",
+            "7": "SELECT xyz FROM employees;",
+            "8": "SELECT name FROM students;",
+            "9": "SELECT name, salary, name FROM employees WHERE salary > 50000 AND salary > 50000;"
         };
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return "";
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function setMode(mode) {
+            document.querySelectorAll('.btn-pill').forEach(b => b.classList.remove('active'));
+            if (mode === 'compiler') {
+                document.getElementById('btnModeCompiler').classList.add('active');
+            }
+        }
 
         function applyPreset() {
             const val = document.getElementById('presetSelect').value;
             if (PRESETS[val]) {
                 document.getElementById('sqlQuery').value = PRESETS[val];
+                setMode('compiler');
                 compileAndRun();
             }
         }
@@ -323,22 +369,23 @@ HTML_TEMPLATE = """
         }
 
         async function compileAndRun() {
+            setMode('compiler');
             const sql = document.getElementById('sqlQuery').value.trim();
             const alertBox = document.getElementById('statusAlert');
-            alertBox.innerHTML = '<div class="alert" style="background:#e0f2fe; color:#0369a1;">Processing compiler phases...</div>';
+            alertBox.innerHTML = "<div class='alert' style='background:#e0f2fe; color:#0369a1;'>Running LL(1) Compiler Pipeline...</div>";
 
             try {
                 const res = await fetch('/compile', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ sql })
+                    body: JSON.stringify({ sql: sql })
                 });
                 const data = await res.json();
 
                 if (!data.success) {
-                    alertBox.innerHTML = `<div class="alert alert-error"><strong>Compilation Halted at [${data.error_stage}]:</strong><br>${data.error_message}</div>`;
+                    alertBox.innerHTML = "<div class='alert alert-error'><strong>Compilation Halted at [" + escapeHtml(data.error_stage) + "]:</strong><br>" + escapeHtml(data.error_message) + "</div>";
                 } else {
-                    alertBox.innerHTML = `<div class="alert alert-success"><strong>Success:</strong> Query parsed, validated, optimized, and executed! (${data.row_count} rows returned)</div>`;
+                    alertBox.innerHTML = "<div class='alert alert-success'><strong>Success:</strong> Query parsed, validated, optimized, and executed! (" + data.row_count + " rows returned)</div>";
                 }
 
                 // Render Results
@@ -357,29 +404,29 @@ HTML_TEMPLATE = """
                 document.getElementById('planOutput').textContent = data.plan_text || "Execution plan not available.";
 
             } catch (err) {
-                alertBox.innerHTML = `<div class="alert alert-error">Network / Server Error: ${err.message}</div>`;
+                alertBox.innerHTML = "<div class='alert alert-error'>Server Communication Error: " + escapeHtml(err.message) + "</div>";
             }
         }
 
         function renderResults(data) {
             const div = document.getElementById('resultOutput');
             if (!data.success) {
-                div.innerHTML = `<p style="color:var(--error-text);">No results generated due to <strong>${data.error_stage}</strong>.</p>`;
+                div.innerHTML = "<p style='color:var(--error-text);'>No database records produced due to <strong>" + escapeHtml(data.error_stage) + "</strong>.</p>";
                 return;
             }
-            let html = `<p style="margin-bottom:8px;"><strong>Generated SQL:</strong> <code>${data.generated_sql}</code></p>`;
+            let html = "<p style='margin-bottom:8px;'><strong>Compiled Parameterized SQL:</strong> <code>" + escapeHtml(data.generated_sql) + "</code></p>";
             if (data.rows && data.rows.length > 0) {
-                html += '<table><thead><tr>';
-                data.columns.forEach(c => html += `<th>${c}</th>`);
-                html += '</tr></thead><tbody>';
+                html += "<table><thead><tr>";
+                data.columns.forEach(c => { html += "<th>" + escapeHtml(c) + "</th>"; });
+                html += "</tr></thead><tbody>";
                 data.rows.forEach(r => {
-                    html += '<tr>';
-                    r.forEach(v => html += `<td>${v}</td>`);
-                    html += '</tr>';
+                    html += "<tr>";
+                    r.forEach(v => { html += "<td>" + escapeHtml(v) + "</td>"; });
+                    html += "</tr>";
                 });
-                html += '</tbody></table>';
+                html += "</tbody></table>";
             } else {
-                html += '<p>Query succeeded. 0 rows returned.</p>';
+                html += "<p>Query executed successfully, but 0 matching records were found.</p>";
             }
             div.innerHTML = html;
         }
@@ -392,15 +439,15 @@ HTML_TEMPLATE = """
                 summary.textContent = "No trace steps recorded.";
                 return;
             }
-            summary.innerHTML = `Completed in <strong>${trace.length}</strong> stack execution steps. Status: <span class="badge ${isSuccess ? 'badge-success' : 'badge-fail'}">${isSuccess ? 'ACCEPTED' : 'REJECTED'}</span>`;
+            const statusClass = isSuccess ? 'badge-success' : 'badge-fail';
+            const statusText = isSuccess ? 'ACCEPTED' : 'REJECTED';
+            summary.innerHTML = "Completed in <strong>" + trace.length + "</strong> stack execution steps. Parser Status: <span class='badge " + statusClass + "'>" + statusText + "</span>";
             trace.forEach(t => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${t.step}</td>
-                    <td><code>${t.stack}</code></td>
-                    <td><code>${t.remaining_input}</code></td>
-                    <td>${t.action}</td>
-                `;
+                tr.innerHTML = "<td>" + t.step + "</td>" +
+                               "<td><code>" + escapeHtml(t.stack) + "</code></td>" +
+                               "<td><code>" + escapeHtml(t.remaining_input) + "</code></td>" +
+                               "<td>" + escapeHtml(t.action) + "</td>";
                 tbody.appendChild(tr);
             });
         }
@@ -411,7 +458,11 @@ HTML_TEMPLATE = """
             if (!tokens || tokens.length === 0) return;
             tokens.forEach((t, i) => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${i + 1}</td><td><strong>${t.type}</strong></td><td>${t.value}</td><td>${t.line}</td><td>${t.column}</td>`;
+                tr.innerHTML = "<td>" + (i + 1) + "</td>" +
+                               "<td><strong>" + escapeHtml(t.type) + "</strong></td>" +
+                               "<td>" + escapeHtml(t.value) + "</td>" +
+                               "<td>" + t.line + "</td>" +
+                               "<td>" + t.column + "</td>";
                 tbody.appendChild(tr);
             });
         }
@@ -420,16 +471,12 @@ HTML_TEMPLATE = """
             const div = document.getElementById('semanticOutput');
             if (!sem) { div.innerHTML = "<p>Semantic analysis did not run.</p>"; return; }
             if (sem.is_valid) {
-                div.innerHTML = `
-                    <div class="alert alert-success">✔ Semantic Validation Passed</div>
-                    <p><strong>Table Name:</strong> <code>${sem.table_name}</code></p>
-                    <p><strong>Resolved Columns:</strong> <code>${sem.resolved_columns.join(', ')}</code></p>
-                `;
+                div.innerHTML = "<div class='alert alert-success'>✔ Semantic Validation Passed: Table exists, columns verified, types compatible.</div>" +
+                                "<p><strong>Table Name:</strong> <code>" + escapeHtml(sem.table_name) + "</code></p>" +
+                                "<p><strong>Resolved Columns:</strong> <code>" + escapeHtml(sem.resolved_columns.join(', ')) + "</code></p>";
             } else {
-                div.innerHTML = `
-                    <div class="alert alert-error">✘ Semantic Validation Failed:</div>
-                    <ul>${sem.errors.map(e => `<li>${e}</li>`).join('')}</ul>
-                `;
+                let errList = sem.errors.map(e => "<li>" + escapeHtml(e) + "</li>").join('');
+                div.innerHTML = "<div class='alert alert-error'>✘ Semantic Validation Failed:</div><ul>" + errList + "</ul>";
             }
         }
 
@@ -437,54 +484,56 @@ HTML_TEMPLATE = """
             const div = document.getElementById('optimizerOutput');
             if (!opt) { div.innerHTML = "<p>Optimizer did not run.</p>"; return; }
             if (opt.is_optimized) {
-                div.innerHTML = `
-                    <div class="alert alert-success">✔ Optimization Applied: ${opt.message}</div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                        <div><strong>Original AST:</strong><pre>${origAst}</pre></div>
-                        <div><strong>Optimized AST:</strong><pre>${opt.optimized_ast_text}</pre></div>
-                    </div>
-                `;
+                div.innerHTML = "<div class='alert alert-success'>✔ Optimization Applied: " + escapeHtml(opt.message) + "</div>" +
+                                "<div style='display:grid; grid-template-columns:1fr 1fr; gap:12px;'>" +
+                                "<div><strong>Original AST:</strong><pre>" + escapeHtml(origAst) + "</pre></div>" +
+                                "<div><strong>Optimized AST:</strong><pre>" + escapeHtml(opt.optimized_ast_text) + "</pre></div>" +
+                                "</div>";
             } else {
-                div.innerHTML = `
-                    <div class="alert" style="background:#f1f5f9; color:#475569;">ℹ ${opt.message}</div>
-                    <pre>${origAst}</pre>
-                `;
+                div.innerHTML = "<div class='alert' style='background:#f1f5f9; color:#475569;'>ℹ " + escapeHtml(opt.message) + "</div>" +
+                                "<pre>" + escapeHtml(origAst) + "</pre>";
             }
-        }
-
-        // Viva Demo Mode
-        function loadVivaDemo() {
-            document.getElementById('sqlQuery').value = "SELECT name FROM employees;";
-            compileAndRun();
-            // Automatically switch to Trace tab
-            document.querySelectorAll('.tab-btn')[1].click();
         }
 
         // Educational Theory Demo
         async function loadTheoryDemo() {
+            document.querySelectorAll('.btn-pill').forEach(b => b.classList.remove('active'));
+            document.getElementById('btnModeTheory').classList.add('active');
             const alertBox = document.getElementById('statusAlert');
-            alertBox.innerHTML = '<div class="alert" style="background:#e0f2fe; color:#0369a1;">Simulating Educational Canonical Grammar: E → T E\' ...</div>';
-            const res = await fetch('/theory');
-            const data = await res.json();
-            alertBox.innerHTML = '<div class="alert alert-success">Educational LL(1) Arithmetic Demo Simulated: String "id + id" ACCEPTED (0 conflicts)!</div>';
-            renderTrace(data.trace, true);
-            document.querySelectorAll('.tab-btn')[1].click();
+            alertBox.innerHTML = "<div class='alert' style='background:#e0f2fe; color:#0369a1;'>Simulating Canonical Educational LL(1) Grammar (E &rarr; T E&#39;) on input &quot;id + id&quot; ...</div>";
+            try {
+                const res = await fetch('/theory');
+                const data = await res.json();
+                alertBox.innerHTML = "<div class='alert alert-success'>Canonical LL(1) Demo: Input &quot;id + id&quot; successfully parsed and ACCEPTED with 0 conflicts!</div>";
+                renderTrace(data.trace, true);
+                document.querySelectorAll('.tab-btn')[1].click();
+            } catch (e) {
+                alertBox.innerHTML = "<div class='alert alert-error'>Failed to load theory demo: " + escapeHtml(e.message) + "</div>";
+            }
         }
 
         // View Grammar and Parsing Table
         async function loadGrammarView() {
-            const res = await fetch('/grammar');
-            const data = await res.json();
-            document.getElementById('astOutput').textContent = data.table_text;
-            document.querySelectorAll('.tab-btn')[3].click();
+            document.querySelectorAll('.btn-pill').forEach(b => b.classList.remove('active'));
+            document.getElementById('btnModeGrammar').classList.add('active');
+            const alertBox = document.getElementById('statusAlert');
+            alertBox.innerHTML = "<div class='alert' style='background:#e0f2fe; color:#0369a1;'>Loading Mini-SQL LL(1) Parsing Table ...</div>";
+            try {
+                const res = await fetch('/grammar');
+                const data = await res.json();
+                alertBox.innerHTML = "<div class='alert alert-success'>Mini-SQL Parsing Table: Strictly LL(1) with 0 Conflicts. Displaying below in Tab 4.</div>";
+                document.getElementById('astOutput').textContent = data.table_text;
+                document.querySelectorAll('.tab-btn')[3].click();
+            } catch (e) {
+                alertBox.innerHTML = "<div class='alert alert-error'>Failed to load grammar: " + escapeHtml(e.message) + "</div>";
+            }
         }
 
-        // Initial compile on load
-        window.addEventListener('load', compileAndRun);
+        // Run automatically when page finishes loading
+        window.addEventListener('DOMContentLoaded', compileAndRun);
     </script>
 </body>
-</html>
-"""
+</html>"""
 
 @app.route("/")
 def index():
@@ -564,7 +613,5 @@ if __name__ == "__main__":
     print(f"   Opening Web UI at: http://localhost:{port}")
     print("=" * 65)
     
-    # Open browser automatically after 1 second
     threading.Timer(1.0, open_browser).start()
-    
     app.run(host="127.0.0.1", port=port, debug=False)
