@@ -142,7 +142,12 @@ class LL1Parser:
                     # Empty cell in parsing table -> Syntax Error!
                     expected = self.table.get_expected_terminals(top_symbol)
                     found_str = f"{lookahead_token.type}({lookahead_token.value})" if lookahead_token.value else lookahead_token.type
+                    # Make the common missing-FROM mistake easier to understand.
+                    # The table knows that ColumnListTail can end with FROM;
+                    # expose that expectation directly in the diagnostic.
                     expected_desc = " or ".join(expected) if expected else "valid token"
+                    if lookahead_token.type == "ID" and "FROM" in expected:
+                        expected_desc = "FROM" + (" or COMMA" if "COMMA" in expected else "")
                     msg = f"Expected {expected_desc}, but found '{found_str}' while expanding '{top_symbol}'"
                     trace.append({
                         "step": step,

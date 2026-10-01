@@ -1,9 +1,3 @@
-"""
-main.py - Main entry point and unified pipeline orchestrator for Mini-SQL LL(1) Compiler.
-Executes the full pipeline:
-SQL Tokens -> LL(1) Parser -> Semantic Validation -> AST -> Optimization -> Execution Plan -> SQLite Execution
-"""
-
 import sys
 import os
 import argparse
@@ -35,34 +29,20 @@ class CompilationReport:
         self.error_stage: Optional[str] = None
         self.error_message: Optional[str] = None
         
-        # Phase 1: Lexical Analysis
         self.tokens: List[Token] = []
-        
-        # Phase 2: LL(1) Parsing
         self.parse_tree: Optional[ParseTreeNode] = None
         self.trace: List[dict] = []
-        
-        # Phase 3: AST Generation
         self.ast: Optional[QueryNode] = None
         self.ast_text: str = ""
-        
-        # Phase 4: Semantic Analysis
         self.semantic_result: Optional[SemanticResult] = None
-        
-        # Phase 5: Query Optimization
         self.optimized_ast: Optional[QueryNode] = None
         self.optimized_ast_text: str = ""
         self.optimization_report: Optional[OptimizationReport] = None
-        
-        # Phase 6: Execution Plan
         self.execution_plan: Optional[ExecutionPlan] = None
-        
-        # Phase 7: SQLite Execution
         self.execution_result: Optional[ExecutionResult] = None
 
 class MiniSQLCompiler:
     def __init__(self):
-        # Initialize Grammar, FIRST/FOLLOW, and Parsing Table once
         self.grammar: Grammar = get_mini_sql_grammar()
         self.first_follow: FirstFollowCalculator = FirstFollowCalculator(self.grammar)
         self.parsing_table: ParsingTable = ParsingTable(self.grammar, self.first_follow)
@@ -75,7 +55,6 @@ class MiniSQLCompiler:
     def compile_and_execute(self, sql: str) -> CompilationReport:
         report = CompilationReport(sql)
 
-        # ----------------- PHASE 1: LEXICAL ANALYSIS -----------------
         try:
             lexer = Lexer(sql)
             report.tokens = lexer.tokenize()
@@ -84,7 +63,6 @@ class MiniSQLCompiler:
             report.error_message = str(e)
             return report
 
-        # ----------------- PHASE 2: LL(1) PARSING -----------------
         try:
             report.parse_tree, report.trace = self.parser.parse(report.tokens)
         except SyntaxErrorLL1 as e:
@@ -92,7 +70,6 @@ class MiniSQLCompiler:
             report.error_message = str(e)
             return report
 
-        # ----------------- PHASE 3: AST GENERATION -----------------
         try:
             builder = ASTBuilder(report.parse_tree)
             report.ast = builder.build()
@@ -102,23 +79,19 @@ class MiniSQLCompiler:
             report.error_message = f"Failed to construct AST: {str(e)}"
             return report
 
-        # ----------------- PHASE 4: SEMANTIC ANALYSIS -----------------
         report.semantic_result = self.semantic_analyzer.analyze(report.ast)
         if not report.semantic_result.is_valid:
             report.error_stage = "SEMANTIC_ERROR"
             report.error_message = "Semantic Validation Failed:\n  - " + "\n  - ".join(report.semantic_result.errors)
             return report
 
-        # ----------------- PHASE 5: QUERY OPTIMIZATION -----------------
         report.optimized_ast, report.optimization_report = self.optimizer.optimize(
             report.ast, report.semantic_result
         )
         report.optimized_ast_text = report.optimized_ast.format_tree()
 
-        # ----------------- PHASE 6: EXECUTION PLAN -----------------
         report.execution_plan = self.planner.create_plan(report.optimized_ast)
 
-        # ----------------- PHASE 7: SQLITE EXECUTION -----------------
         report.execution_result = self.executor.execute(report.optimized_ast)
         if not report.execution_result.success:
             report.error_stage = "EXECUTION_ERROR"

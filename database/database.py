@@ -65,12 +65,3 @@ def execute_query(sql: str, params: Tuple[Any, ...] = (), db_path: str = DB_PATH
     rows = cursor.fetchall()
     conn.close()
     return columns, rows
-
-if __name__ == "__main__":
-    init_db()
-    print("Database initialized successfully.")
-    schema = get_table_schema()
-    print("Extracted schema:", schema)
-    cols, rows = execute_query("SELECT id, name, salary FROM employees WHERE salary > ?", (50000,))
-    print("Test Query Columns:", cols)
-    print("Test Query Rows:", rows)

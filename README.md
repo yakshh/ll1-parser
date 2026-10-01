@@ -106,6 +106,58 @@ python tests/test_all.py
 python main.py --query "SELECT name, salary FROM employees WHERE salary > 50000 ORDER BY salary DESC;"
 ```
 
+## How the LL Parser version works
+
+The project is a compiler pipeline. Each stage has one job and passes a
+different representation to the next stage:
+
+1. `lexer/lexer.py` reads characters and produces `Token` objects from
+   `lexer/tokens.py`. For example, `SELECT name` becomes `SELECT`, `ID(name)`.
+   It also records line and column positions so errors can point to the input.
+2. `grammar/grammar.py` describes the Mini-SQL language as productions such
+   as `Query -> SELECT SelectList FROM TableClause ...`. `first_follow.py`
+   calculates FIRST and FOLLOW sets. `parsing_table.py` uses them to build the
+   LL(1) lookup table and reports conflicts if the grammar is not predictive.
+3. `parser/ll1_parser.py` is the actual table-driven parser. Its stack holds
+   grammar symbols. A terminal is matched against the lookahead token; a
+   non-terminal is replaced using one table entry. The same operation builds
+   `parser/parse_tree.py`, a concrete derivation tree, and a trace for teaching.
+4. `ast_module/builder.py` removes grammar-only nodes from the parse tree and
+   creates the smaller semantic tree defined in `ast_module/nodes.py`:
+   query, selected columns, table, conditions, and ordering.
+5. `semantic/analyzer.py` checks meaning rather than spelling: the table and
+   columns must exist, and a literal must be compatible with its column type.
+   It reads actual SQLite metadata through `database/database.py`.
+6. `optimizer/optimizer.py` works on a copy of the valid AST. It removes
+   duplicate selected columns, removes repeated predicates, and records every
+   applied rule in an optimization report.
+7. `execution/planner.py` converts the optimized AST into human-readable
+   physical steps: table scan, optional filter, optional sort, then projection.
+8. `execution/executor.py` converts the AST—not the original string—into
+   parameterized SQLite SQL. Values are sent as parameters, which is safer than
+   concatenating user input. The result contains column names, rows, and count.
+
+`main.py` constructs the grammar/table once in `MiniSQLCompiler`, then runs
+these stages in order. It stops at the first failed stage and stores the phase,
+message, and all successful intermediate results in `CompilationReport`.
+`app.py` uses the same compiler from a Flask API and displays the tokens,
+grammar information, trace, AST, optimizer output, plan, and result in a web UI.
+The `educational` module is independent demonstration code for the classic
+arithmetic grammar `E -> T E'`; it explains FIRST/FOLLOW and stack parsing
+without requiring a SQL query.
+
+## Reading the folder easily
+
+The important dependency direction is:
+
+`main/app -> lexer + grammar + parser -> AST -> semantic -> optimizer -> planner/executor -> database`
+
+The `__init__.py` files were empty package markers and are intentionally not
+needed on modern Python versions; the folders remain importable namespace
+packages. `tests/` exercises each compiler phase separately, while
+`database/schema.sql`, `examples/queries.sql`, and `docs/` are supporting data
+and study material rather than runtime pipeline stages.
+
 ### 3. Run Educational LL(1) Theory Demo (E -> T E')
 ```bash
 python educational/theory_ll1.py
