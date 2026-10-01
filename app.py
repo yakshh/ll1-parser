@@ -214,8 +214,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="subtitle">Compiler Design Project — LL(1) Predictive Parser | SQL Compiler Pipeline</div>
             <div class="header-actions">
                 <button id="btnModeCompiler" class="btn-pill active" onclick="setMode('compiler')">Standard Compiler</button>
-                <button id="btnModeTheory" class="btn-pill" onclick="loadTheoryDemo()">Educational Theory: E &rarr; T E&#39;</button>
-                <button id="btnModeGrammar" class="btn-pill" onclick="loadGrammarView()">Mini-SQL LL(1) Table (0 Conflicts)</button>
             </div>
         </header>
 
